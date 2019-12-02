@@ -1,0 +1,141 @@
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * @ClassName Server
+ * @Description TODO
+ * @Auther danni
+ * @Date 2019/11/29 19:45]
+ * @Version 1.0
+ **/
+
+public class Server {
+    public static  List<Channel> channelList=new ArrayList<>();
+    private static boolean flag;
+    public static void main(String[] args) throws IOException {
+        System.out.println("----------server----------");
+        ServerSocket server = new ServerSocket(9999);
+        flag=true;
+        while(flag) {
+            Socket client = server.accept();
+            Channel channel = new Channel(client);
+            channel.initSystem();
+            channelList.add(channel);
+            System.out.println("用户"+channel.getName()+"连接成功！");
+            new Thread(channel).start();
+        }
+    }
+
+}
+ class Channel implements Runnable{
+  private Socket client;
+  private DataInputStream dis=null;
+  private DataOutputStream dos=null;
+  private String name;
+  private boolean isRunning=false;
+
+     public String getName() {
+         return name;
+     }
+
+     public Channel(Socket client) {
+         this.client = client;
+         isRunning=true;
+         try {
+             dis=new DataInputStream(client.getInputStream());
+             dos=new DataOutputStream((client.getOutputStream()));
+         } catch (IOException e) {
+             realese();
+         }
+     }
+     void initSystem(){
+         name=receive().getData();
+         sendOthers(new Message(name+"来到了聊天室",false,false,true));
+         this.send("登录成功！");
+     }
+     public Message receive(){
+         String data="";
+         try {
+             data=dis.readUTF();
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
+         if(data.equals("bye")){
+             this.send("退出登录！");
+             Server.channelList.remove(this);
+             Utils.close(this.client,this.dis,this.dos);
+             return new Message(name+"退出了聊天室",false,false,true);
+         }
+         if(data.startsWith("@")){
+             return new Message(data,true,false,false);
+         }
+         return new Message(data,false,true,false);
+     }
+     public void send(String info){
+         try {
+             dos.writeUTF(info);
+             dos.flush();
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
+     }
+     public void sendOthers(Message message){
+         if(message.isCommon()){
+              for(Channel target:Server.channelList){
+                  if(!target.equals(this)){
+                      target.send(name+":"+message.getData());
+                  }
+              }
+         }
+         if(message.isPrivate()){
+             String data=message.getData().substring(1);
+             String[] datas=data.split(":");
+             for(Channel target:Server.channelList){
+                 if(target.getName().equals(datas[0])){
+                     //target.send(name+"-"+target.getName()+"聊天室：");
+                     target.send(name+":"+datas[1]);
+                     break;
+                 }
+             }
+         }
+         if(message.isSystem()){
+             for(Channel target:Server.channelList){
+                    target.send("系统提示："+message.getData());
+             }
+         }
+
+     }
+
+     public void realese(){
+      isRunning=false;
+         try {
+             if(null!=dis){
+             dis.close();}
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
+         try {
+             if(null!=dos){
+             dos.close();}
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
+         try {
+             if(null!=client){
+             client.close();}
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
+     }
+     public void run() {
+        while(isRunning){
+             Message datas=this.receive();
+             if(null!=datas){
+             sendOthers(datas);}
+         }
+         realese();
+     }
+ }
